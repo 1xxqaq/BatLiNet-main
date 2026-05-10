@@ -1,0 +1,15 @@
+# Editor configs
+.vscode/
+
+# Python ignore files
+**/__pycache__/
+
+# Datasets
+/data/
+
+# Intermediate files
+/temp
+/temp_code/
+/temp_config/
+/workspaces
+/cache

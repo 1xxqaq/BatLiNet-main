@@ -1,0 +1,39 @@
+﻿<html><head><meta charset='utf-8'>
+<style>
+body { font-family: 'Microsoft YaHei', sans-serif; margin: 24px; color: #222; }
+h1, h2 { margin-bottom: 12px; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 28px; font-size: 14px; }
+thead tr:first-child th { border-top: 2px solid #222; }
+thead th { border-bottom: 1.5px solid #222; padding: 8px 10px; text-align: center; }
+tbody td { padding: 8px 10px; text-align: right; }
+tbody td:first-child, tbody td:nth-child(2) { text-align: center; }
+tbody tr:last-child td { border-bottom: 2px solid #222; }
+tbody tr:nth-child(even) td { background: #f7f7f7; }
+</style>
+</head><body>
+<h1>BatLiNet mix_20 结果对比表</h1>
+<h2>Seed 级别对比</h2>
+<table>
+<thead><tr><th>Seed</th><th>作者 RMSE</th><th>复现 RMSE</th><th>差值</th><th>作者 MAE</th><th>复现 MAE</th><th>差值</th><th>作者 MAPE</th><th>复现 MAPE</th><th>差值</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>222.4879</td><td>190.1750</td><td>-32.3129</td><td>136.9221</td><td>123.4316</td><td>-13.4905</td><td>0.1819</td><td>0.1658</td><td>-0.0162</td></tr>
+<tr><td>1</td><td>240.1459</td><td>189.5558</td><td>-50.5900</td><td>134.3408</td><td>125.2243</td><td>-9.1165</td><td>0.2698</td><td>0.1755</td><td>-0.0943</td></tr>
+<tr><td>2</td><td>203.7738</td><td>194.0878</td><td>-9.6861</td><td>122.9413</td><td>126.4276</td><td>3.4863</td><td>0.1655</td><td>0.1686</td><td>0.0031</td></tr>
+<tr><td>3</td><td>202.8776</td><td>215.1313</td><td>12.2537</td><td>129.4314</td><td>140.6459</td><td>11.2145</td><td>0.1674</td><td>0.1783</td><td>0.0108</td></tr>
+<tr><td>4</td><td>192.4924</td><td>190.1046</td><td>-2.3879</td><td>123.4311</td><td>122.0263</td><td>-1.4048</td><td>0.1692</td><td>0.1696</td><td>0.0003</td></tr>
+<tr><td>5</td><td>183.4187</td><td>199.1688</td><td>15.7501</td><td>114.6841</td><td>128.0219</td><td>13.3378</td><td>0.1586</td><td>0.1948</td><td>0.0362</td></tr>
+<tr><td>6</td><td>196.4533</td><td>198.4112</td><td>1.9579</td><td>126.2816</td><td>128.8774</td><td>2.5958</td><td>0.1691</td><td>0.1741</td><td>0.0049</td></tr>
+<tr><td>7</td><td>214.5499</td><td>200.0807</td><td>-14.4692</td><td>139.7490</td><td>133.3704</td><td>-6.3786</td><td>0.1979</td><td>0.1696</td><td>-0.0283</td></tr>
+</tbody></table>
+<h2>汇总统计</h2>
+<table>
+<thead><tr><th>分组</th><th>指标</th><th>数量</th><th>均值</th><th>标准差</th><th>最优 Seed</th><th>最优值</th><th>最差 Seed</th><th>最差值</th></tr></thead>
+<tbody>
+<tr><td>作者</td><td>RMSE</td><td>8</td><td>207.0249</td><td>16.9584</td><td>5</td><td>183.4187</td><td>1</td><td>240.1459</td></tr>
+<tr><td>作者</td><td>MAE</td><td>8</td><td>128.4727</td><td>7.7849</td><td>5</td><td>114.6841</td><td>7</td><td>139.7490</td></tr>
+<tr><td>作者</td><td>MAPE</td><td>8</td><td>0.1849</td><td>0.0340</td><td>5</td><td>0.1586</td><td>1</td><td>0.2698</td></tr>
+<tr><td>复现</td><td>RMSE</td><td>8</td><td>197.0894</td><td>7.9285</td><td>1</td><td>189.5558</td><td>3</td><td>215.1313</td></tr>
+<tr><td>复现</td><td>MAE</td><td>8</td><td>128.5032</td><td>5.6373</td><td>4</td><td>122.0263</td><td>3</td><td>140.6459</td></tr>
+<tr><td>复现</td><td>MAPE</td><td>8</td><td>0.1745</td><td>0.0086</td><td>0</td><td>0.1658</td><td>5</td><td>0.1948</td></tr>
+</tbody></table>
+</body></html>
