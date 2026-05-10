@@ -52,6 +52,9 @@ class BatLiNetRULPredictor(NNModel):
                  support_size: int = 1,
                  lr: float = 1e-3,
                  act_fn: str = 'relu',
+                 support_aggregation: str = 'original',
+                 score_hidden_channels: int = None,
+                 score_temperature: float = 1.0,
                  filter_cycles: bool = True,
                  features_to_drop: list = None,
                  cycles_to_drop: list = None,
@@ -72,6 +75,10 @@ class BatLiNetRULPredictor(NNModel):
         self.train_support_size = train_support_size or support_size
         self.test_support_size = test_support_size or support_size
         self.grad_accum_steps = gradient_accumulation_steps
+        self.support_aggregation = support_aggregation
+        if score_temperature <= 0:
+            raise ValueError('score_temperature must be positive.')
+        self.score_temperature = score_temperature
         self.filter_cycles = filter_cycles
         if isinstance(features_to_drop, int):
             features_to_drop = [features_to_drop]
@@ -91,6 +98,16 @@ class BatLiNetRULPredictor(NNModel):
             kernel_size, act_fn)
         # Shared regressor without bias
         self.fc = nn.Linear(channels, 1, bias=False)
+        if self.support_aggregation == 'learned_weighted':
+            score_hidden_channels = score_hidden_channels or max(channels // 2, 1)
+            self.score_head = nn.Sequential(
+                nn.Linear(channels, score_hidden_channels),
+                nn.ReLU(),
+                nn.Linear(score_hidden_channels, 1)
+            )
+        elif self.support_aggregation not in ('original', 'mean', 'median'):
+            raise ValueError(
+                f'Unknown support_aggregation: {self.support_aggregation}')
         self.lr = lr
         self.seed = seed
 
@@ -104,19 +121,16 @@ class BatLiNetRULPredictor(NNModel):
 
         x_ori = self.ori_module(feature)
         x_sup = self.sup_module(support_feature.view(-1, C, H, W))
+        x_sup = x_sup.view(B, S, self.channels)
 
         y_ori = self.fc(x_ori.view(B, self.channels)).view(-1)
-        y_sup = self.fc(x_sup.view(B, S, self.channels)).view(B, S)
+        y_sup = self.fc(x_sup).view(B, S)
         y_sup += support_label.view(B, S)
 
         if self.return_pointwise_predictions:
             return y_ori, y_sup
 
-        if self.training:
-            y_sup = y_sup.mean(1).view(-1)
-        else:
-            # We use median aggregation to minimize the influence of outliers
-            y_sup = y_sup.median(1)[0].view(-1)
+        y_sup = self.aggregate_support_predictions(x_sup, y_sup)
 
         if return_loss:
             loss = sum([
@@ -126,6 +140,25 @@ class BatLiNetRULPredictor(NNModel):
             return loss
 
         return (1. - self.alpha) * y_ori + self.alpha * y_sup
+
+    def aggregate_support_predictions(self, x_sup, y_sup):
+        if self.support_aggregation == 'learned_weighted':
+            score = self.score_head(x_sup).squeeze(-1)
+            score = score / self.score_temperature
+            weight = torch.softmax(score, dim=1)
+            return (weight * y_sup).sum(1).view(-1)
+
+        if self.support_aggregation == 'mean':
+            return y_sup.mean(1).view(-1)
+
+        if self.support_aggregation == 'median':
+            return y_sup.median(1)[0].view(-1)
+
+        if self.training:
+            return y_sup.mean(1).view(-1)
+
+        # We use median aggregation to minimize the influence of outliers
+        return y_sup.median(1)[0].view(-1)
 
     def fit(self, dataset: DataBundle, timestamp: str):
         self.train()
