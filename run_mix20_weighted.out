@@ -1,0 +1,138 @@
+nohup: ignoring input
+Processing ablation/diff_branch/batlinet_weighted/mix_20.yaml
+Traceback (most recent call last):
+Seed is set to 0.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 1.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 2.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 3.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 4.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 5.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 6.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
+Traceback (most recent call last):
+Seed is set to 7.
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 213, in <module>
+    fire.Fire(main)
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/envs/batlinet/lib/python3.11/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/BatLiNet-main/./scripts/pipeline.py", line 157, in main
+    checkpoint = next(Path(workspace).glob(f'*seed_{seed}*.ckpt'))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration
