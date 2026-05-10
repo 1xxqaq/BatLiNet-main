@@ -53,8 +53,12 @@ class BatLiNetRULPredictor(NNModel):
                  lr: float = 1e-3,
                  act_fn: str = 'relu',
                  support_aggregation: str = 'original',
+                 score_head_type: str = 'mlp',
                  score_hidden_channels: int = None,
                  score_temperature: float = 1.0,
+                 teacher_temperature: float = 1.0,
+                 score_loss_weight: float = 0.0,
+                 warmup_epochs: int = 0,
                  filter_cycles: bool = True,
                  features_to_drop: list = None,
                  cycles_to_drop: list = None,
@@ -78,7 +82,17 @@ class BatLiNetRULPredictor(NNModel):
         self.support_aggregation = support_aggregation
         if score_temperature <= 0:
             raise ValueError('score_temperature must be positive.')
+        if teacher_temperature <= 0:
+            raise ValueError('teacher_temperature must be positive.')
+        if score_loss_weight < 0:
+            raise ValueError('score_loss_weight must be non-negative.')
+        if warmup_epochs < 0:
+            raise ValueError('warmup_epochs must be non-negative.')
         self.score_temperature = score_temperature
+        self.teacher_temperature = teacher_temperature
+        self.score_loss_weight = score_loss_weight
+        self.warmup_epochs = warmup_epochs
+        self._current_epoch = None
         self.filter_cycles = filter_cycles
         if isinstance(features_to_drop, int):
             features_to_drop = [features_to_drop]
@@ -98,13 +112,9 @@ class BatLiNetRULPredictor(NNModel):
             kernel_size, act_fn)
         # Shared regressor without bias
         self.fc = nn.Linear(channels, 1, bias=False)
-        if self.support_aggregation == 'learned_weighted':
-            score_hidden_channels = score_hidden_channels or max(channels // 2, 1)
-            self.score_head = nn.Sequential(
-                nn.Linear(channels, score_hidden_channels),
-                nn.ReLU(),
-                nn.Linear(score_hidden_channels, 1)
-            )
+        if self.support_aggregation in ('learned_weighted', 'supervised_weighted'):
+            self.score_head = build_score_head(
+                channels, score_head_type, score_hidden_channels)
         elif self.support_aggregation not in ('original', 'mean', 'median'):
             raise ValueError(
                 f'Unknown support_aggregation: {self.support_aggregation}')
@@ -116,7 +126,8 @@ class BatLiNetRULPredictor(NNModel):
                label: torch.Tensor,
                support_feature: torch.Tensor,
                support_label: torch.Tensor,
-               return_loss: bool = False):
+               return_loss: bool = False,
+               epoch: int = None):
         B, S, C, H, W = support_feature.size()
 
         x_ori = self.ori_module(feature)
@@ -130,35 +141,65 @@ class BatLiNetRULPredictor(NNModel):
         if self.return_pointwise_predictions:
             return y_ori, y_sup
 
-        y_sup = self.aggregate_support_predictions(x_sup, y_sup)
+        y_sup_agg, weight = self.aggregate_support_predictions(
+            x_sup, y_sup, epoch=epoch)
 
         if return_loss:
             loss = sum([
                 (1. - self.alpha) * mse(y_ori, label),
-                self.alpha * mse(y_sup, label)
+                self.alpha * mse(y_sup_agg, label)
             ])
+            if (
+                self.support_aggregation == 'supervised_weighted'
+                and weight is not None
+                and self.score_loss_weight > 0
+            ):
+                loss = loss + self.score_loss_weight * \
+                    self.score_supervision_loss(y_sup, label, weight)
             return loss
 
-        return (1. - self.alpha) * y_ori + self.alpha * y_sup
+        return (1. - self.alpha) * y_ori + self.alpha * y_sup_agg
 
-    def aggregate_support_predictions(self, x_sup, y_sup):
-        if self.support_aggregation == 'learned_weighted':
+    def aggregate_support_predictions(self, x_sup, y_sup, epoch=None):
+        if (
+            self.support_aggregation in ('learned_weighted', 'supervised_weighted')
+            and self.use_weighted_aggregation(epoch)
+        ):
             score = self.score_head(x_sup).squeeze(-1)
             score = score / self.score_temperature
             weight = torch.softmax(score, dim=1)
-            return (weight * y_sup).sum(1).view(-1)
+            return (weight * y_sup).sum(1).view(-1), weight
 
         if self.support_aggregation == 'mean':
-            return y_sup.mean(1).view(-1)
+            return y_sup.mean(1).view(-1), None
 
         if self.support_aggregation == 'median':
-            return y_sup.median(1)[0].view(-1)
+            return y_sup.median(1)[0].view(-1), None
 
         if self.training:
-            return y_sup.mean(1).view(-1)
+            return y_sup.mean(1).view(-1), None
 
         # We use median aggregation to minimize the influence of outliers
-        return y_sup.median(1)[0].view(-1)
+        return y_sup.median(1)[0].view(-1), None
+
+    def use_weighted_aggregation(self, epoch=None):
+        if self.support_aggregation != 'supervised_weighted':
+            return True
+        current_epoch = self._current_epoch if epoch is None else epoch
+        if current_epoch is None:
+            return True
+        return current_epoch >= self.warmup_epochs
+
+    def score_supervision_loss(self, y_sup, label, weight):
+        with torch.no_grad():
+            error = (y_sup.detach() - label.view(-1, 1)).abs()
+            teacher_weight = torch.softmax(
+                -error / self.teacher_temperature, dim=1)
+            teacher_weight = torch.clamp(teacher_weight, min=1e-8)
+
+        log_teacher = torch.log(teacher_weight)
+        log_weight = torch.log(torch.clamp(weight, min=1e-8))
+        return (teacher_weight * (log_teacher - log_weight)).sum(1).mean()
 
     def fit(self, dataset: DataBundle, timestamp: str):
         self.train()
@@ -171,13 +212,15 @@ class BatLiNetRULPredictor(NNModel):
 
         latest = None
         for epoch in tqdm(range(self.train_epochs), desc='Training'):
+            self._current_epoch = epoch
             self.train()
 
             for indx, data_batch in enumerate(ori_loader):
                 x, y, raw_x = data_batch.values()
                 sup_x, sup_y = self.get_support_set(
                     raw_x, dataset.train_data.feature, dataset.train_data.label)
-                loss = self.forward(x, y, sup_x, sup_y, return_loss=True)
+                loss = self.forward(
+                    x, y, sup_x, sup_y, return_loss=True, epoch=epoch)
                 loss.backward()
 
                 if (
@@ -327,6 +370,19 @@ def remove_glitches(data, width=25, threshold=3):
         data[i] = _remove_glitches(data[i], width, threshold)
     data = data.view(shape)
     return data
+
+
+def build_score_head(channels, score_head_type, score_hidden_channels):
+    if score_head_type == 'linear':
+        return nn.Linear(channels, 1)
+    if score_head_type == 'mlp':
+        score_hidden_channels = score_hidden_channels or max(channels // 2, 1)
+        return nn.Sequential(
+            nn.Linear(channels, score_hidden_channels),
+            nn.ReLU(),
+            nn.Linear(score_hidden_channels, 1)
+        )
+    raise ValueError(f'Unknown score_head_type: {score_head_type}')
 
 
 def build_module(

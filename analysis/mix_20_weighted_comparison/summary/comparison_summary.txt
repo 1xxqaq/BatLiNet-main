@@ -1,0 +1,14 @@
+﻿Experiment comparison: mix_20
+
+Baseline: batlinet_original
+Baseline workspace: D:\Documents\研一\论文阅读\复现代码\Batlinet\BatLiNet-main\workspaces\mix_20_0424
+Candidate: batlinet_weighted
+Candidate workspace: D:\GongZuo\Codex\projects\batlinet1\BatLiNet-main\workspaces\ablation\diff_branch\batlinet_weighted\mix_20_0511
+
+Metric means:
+- RMSE: baseline 197.0894, candidate 197.4994, delta +0.4101 (+0.21%), worse
+- MAE: baseline 128.5032, candidate 128.3905, delta -0.1127 (-0.09%), better
+- MAPE: baseline 0.1745, candidate 0.1707, delta -0.0038 (-2.16%), better
+
+Seed coverage:
+- all compared seeds are available in both workspaces

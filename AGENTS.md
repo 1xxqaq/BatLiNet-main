@@ -882,8 +882,12 @@ src/models/rul_predictors/batlinet.py
 
 ```python
 support_aggregation: str = 'original'
+score_head_type: str = 'mlp'
 score_hidden_channels: int = None
 score_temperature: float = 1.0
+teacher_temperature: float = 1.0
+score_loss_weight: float = 0.0
+warmup_epochs: int = 0
 ```
 
 支持的聚合模式：
@@ -893,6 +897,7 @@ original
 mean
 median
 learned_weighted
+supervised_weighted
 ```
 
 含义：
@@ -901,6 +906,7 @@ learned_weighted
 - `mean`：训练和测试都取均值。
 - `median`：训练和测试都取中位数。
 - `learned_weighted`：学习每个参考电池的权重，用加权平均代替固定均值/中位数。
+- `supervised_weighted`：预热阶段保持原始聚合，预热后启用学习权重，并用单独参考预测误差构造教师权重来监督打分头。
 
 `learned_weighted` 的打分器：
 
@@ -936,6 +942,27 @@ y_sup = (weight * y_sup).sum(1).view(-1)
 ```
 
 本次修改没有改变损失函数主体。这样对比时更清楚：实验主要检验“参考电池聚合方式”是否优于原来的均值/中位数策略。
+
+后续又新增了 `supervised_weighted`，它会在训练阶段额外计算：
+
+```text
+e_i = |y_sup_i - label|
+q_i = softmax(-detach(e_i) / teacher_temperature)
+```
+
+其中 `q_i` 是教师权重，表示“当前目标电池下哪个参考电池单独预测更准”。模型打分头输出学生权重 `w_i`，并加入：
+
+```text
+L_score = KL(q || w)
+```
+
+总损失变为：
+
+```text
+L = 原始预测损失 + score_loss_weight * L_score
+```
+
+`warmup_epochs` 用于前若干 epoch 保持原始训练逻辑，让单独参考预测先具备基本意义，然后再启用加权和打分监督。
 
 
 ## 15. 新增 weighted 配置
@@ -975,6 +1002,31 @@ workspaces/ablation/diff_branch/batlinet_weighted/mix_20
 ```
 
 具体取决于 `run_pipeline_with_n_seeds.sh` 中根据 config 相对路径生成 workspace 的逻辑。
+
+新增有监督关系可信度加权配置：
+
+```text
+configs/ablation/diff_branch/batlinet_supervised_weighted/mix_20.yaml
+```
+
+关键差异：
+
+```yaml
+train_support_size: 4
+test_support_size: 32
+support_aggregation: 'supervised_weighted'
+score_head_type: 'linear'
+score_temperature: 1.0
+teacher_temperature: 1.0
+score_loss_weight: 0.05
+warmup_epochs: 100
+```
+
+服务器测试命令：
+
+```bash
+./scripts/run_pipeline_with_n_seeds.sh configs/ablation/diff_branch/batlinet_supervised_weighted/mix_20.yaml 8
+```
 
 
 ## 16. 结果比较脚本
@@ -1136,18 +1188,18 @@ conda run -n batlinet python .\scripts\compare_experiment_results.py --help
 
 1. 在服务器上使用带 `data/processed` 的完整项目目录。
 2. 确认服务器环境依赖完整。
-3. 运行 weighted `mix_20`：
+3. 运行 supervised weighted `mix_20`：
 
 ```bash
-./scripts/run_pipeline_with_n_seeds.sh configs/ablation/diff_branch/batlinet_weighted/mix_20.yaml 8
+./scripts/run_pipeline_with_n_seeds.sh configs/ablation/diff_branch/batlinet_supervised_weighted/mix_20.yaml 8
 ```
 
-4. 下载 weighted workspace 的 `predictions_seed_*.pkl`、`log.*` 和 `config_*.yaml`。
+4. 下载 supervised weighted workspace 的 `predictions_seed_*.pkl`、`log.*` 和 `config_*.yaml`。
 5. 本地用 `compare_experiment_results.py` 对比：
    - baseline：之前复现的 `mix_20_0424`；
-   - candidate：服务器下载的 `batlinet_weighted/mix_20`。
+   - candidate：服务器下载的 `batlinet_supervised_weighted/mix_20`。
 
-如果 weighted 指标有提升，或者某些 seed 表现有明显差异，后续值得新增诊断模式，保存：
+如果 supervised weighted 指标有提升，或者某些 seed 表现有明显差异，后续值得新增诊断模式，保存：
 
 - 目标电池自身分支预测 `y_ori`；
 - 每个参考电池单独给出的预测 `y_sup_i`；
