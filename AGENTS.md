@@ -114,6 +114,27 @@ BatLiNet-main\analysis\mix_20_comparison
 
 后续测试新增方法时，优先用之前的 `mix_20_0424` 作为原始 BatLiNet 基线，不需要重新跑原始版，除非需要完全同一代码环境下的重新对照。
 
+目前已完成两轮参考电池加权实验：
+
+1. 无监督加权 `batlinet_weighted/mix_20_0511`
+2. 有监督参考电池可信度加权 `batlinet_supervised_weighted/mix_20_0511_2`
+
+对应本地 workspace：
+
+```text
+BatLiNet-main\workspaces\ablation\diff_branch\batlinet_weighted\mix_20_0511
+BatLiNet-main\workspaces\ablation\diff_branch\batlinet_supervised_weighted\mix_20_0511_2
+```
+
+主要分析输出目录：
+
+```text
+BatLiNet-main\analysis\mix_20_weighted_comparison
+BatLiNet-main\analysis\mix_20_supervised_weighted_comparison
+BatLiNet-main\analysis\mix_20_three_way_comparison
+BatLiNet-main\analysis\mix_20_author_supervised_comparison
+```
+
 
 ## 4. 项目目录与各部分作用
 
@@ -143,7 +164,10 @@ transfer_reproduce/
 ```text
 src/models/rul_predictors/batlinet.py
 configs/ablation/diff_branch/batlinet_weighted/mix_20.yaml
+configs/ablation/diff_branch/batlinet_supervised_weighted/mix_20.yaml
 scripts/compare_experiment_results.py
+scripts/build_mix20_three_way_comparison.py
+scripts/build_mix20_author_supervised_comparison.py
 ```
 
 
@@ -1081,8 +1105,137 @@ analysis/mix_20_weighted_comparison/
 
 如果同一个 seed 有多个 `predictions_seed_*.pkl`，脚本会保留修改时间最新的那个。
 
+另外新增了两个专用结果整理脚本：
 
-## 17. 从服务器下载哪些文件
+```text
+scripts/build_mix20_three_way_comparison.py
+scripts/build_mix20_author_supervised_comparison.py
+```
+
+`build_mix20_three_way_comparison.py` 用于生成三组对比：
+
+```text
+作者结果
+最初复现结果 mix_20_0424
+有监督参考电池可信度加权
+```
+
+输出目录：
+
+```text
+analysis/mix_20_three_way_comparison
+```
+
+`build_mix20_author_supervised_comparison.py` 用于生成作者结果与有监督加权方法的单独对比。
+
+输出目录：
+
+```text
+analysis/mix_20_author_supervised_comparison
+```
+
+该目录中还包含方法说明文档：
+
+```text
+analysis/mix_20_author_supervised_comparison/supervised_weighted_method_description.md
+```
+
+这份文档用文字和公式说明“有监督参考电池可信度加权”做了什么，适合后续写论文、汇报或继续扩展方法时参考。
+
+
+## 17. 已完成的参考电池加权实验结果
+
+### 17.1 无监督参考电池加权
+
+配置：
+
+```text
+configs/ablation/diff_branch/batlinet_weighted/mix_20.yaml
+```
+
+workspace：
+
+```text
+workspaces/ablation/diff_branch/batlinet_weighted/mix_20_0511
+```
+
+结果分析目录：
+
+```text
+analysis/mix_20_weighted_comparison
+```
+
+与最初复现 `mix_20_0424` 对比：
+
+| Metric | Original reproduction | Learned weighted | Delta |
+| --- | ---: | ---: | ---: |
+| RMSE | 197.0894 | 197.4994 | +0.4101 |
+| MAE | 128.5032 | 128.3905 | -0.1127 |
+| MAPE | 0.1745 | 0.1707 | -0.0038 |
+
+结论：
+
+```text
+无监督加权与原始 BatLiNet 基本持平，MAE/MAPE 略好，RMSE 略差。
+这说明简单地用打分头替代中位数聚合还不够，打分头缺少明确的“哪个参考电池更好”的训练信号。
+```
+
+### 17.2 有监督参考电池可信度加权
+
+配置：
+
+```text
+configs/ablation/diff_branch/batlinet_supervised_weighted/mix_20.yaml
+```
+
+workspace：
+
+```text
+workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20_0511_2
+```
+
+结果分析目录：
+
+```text
+analysis/mix_20_supervised_weighted_comparison
+analysis/mix_20_three_way_comparison
+analysis/mix_20_author_supervised_comparison
+```
+
+与最初复现 `mix_20_0424` 对比：
+
+| Metric | Original reproduction | Supervised weighted | Delta | Relative change |
+| --- | ---: | ---: | ---: | ---: |
+| RMSE | 197.0894 | 193.7118 | -3.3776 | -1.71% |
+| MAE | 128.5032 | 123.9917 | -4.5115 | -3.51% |
+| MAPE | 0.1745 | 0.1700 | -0.0045 | -2.60% |
+
+与作者结果对比：
+
+| Metric | Author | Supervised weighted | Delta | Relative change |
+| --- | ---: | ---: | ---: | ---: |
+| RMSE | 207.0249 | 193.7118 | -13.3132 | -6.43% |
+| MAE | 128.4727 | 123.9917 | -4.4810 | -3.49% |
+| MAPE | 0.1849 | 0.1700 | -0.0150 | -8.09% |
+
+结论：
+
+```text
+有监督参考电池可信度加权在 MIX-20 上三项指标均优于最初复现和作者结果。
+提升幅度属于小幅稳定提升，不是大幅突破，但相比无监督加权更有信号。
+当前结果支持“参考电池可信度需要显式建模，并且单独参考预测误差可以作为训练阶段的监督信号”这一方向。
+```
+
+需要谨慎说明：
+
+```text
+当前 predictions_seed_*.pkl 只保存最终预测和指标，不保存每个参考电池的权重、单独预测和索引。
+因此目前只能证明指标有提升，还不能直接证明模型确实把高权重分给了更好的参考电池。
+若要支撑机制解释，下一步应加入诊断输出。
+```
+
+
+## 18. 从服务器下载哪些文件
 
 如果只是做指标比较，下载 weighted workspace 中这些文件即可：
 
@@ -1113,7 +1266,7 @@ latest.ckpt
 只有在后续需要重新推理、查看模型参数、提取每个参考电池权重时，才需要 checkpoint。
 
 
-## 18. 依赖环境
+## 19. 依赖环境
 
 `requirements.txt` 已补充项目实际导入的依赖：
 
@@ -1168,7 +1321,7 @@ conda run -n batlinet pip install numba==0.58.1 requests==2.31.0
 注意：不要在不了解 CUDA 版本的情况下随意用 pip 重装 PyTorch。
 
 
-## 19. 已做过的检查
+## 20. 已做过的检查
 
 已运行并通过：
 
@@ -1182,24 +1335,25 @@ conda run -n batlinet python .\scripts\compare_experiment_results.py --help
 尝试用随机张量实例化并前向测试 `BatLiNetRULPredictor` 时，本地环境在导入阶段因为缺少 `numba` 失败，还没真正执行到模型前向。因此这不是模型形状错误，而是本地环境依赖不完整。
 
 
-## 20. 当前推荐下一步
+## 21. 当前推荐下一步
 
-当前最自然的下一步是：
+当前最自然的下一步不再是继续跑同一个 MIX-20 指标对比，而是做机制诊断和消融。
 
-1. 在服务器上使用带 `data/processed` 的完整项目目录。
-2. 确认服务器环境依赖完整。
-3. 运行 supervised weighted `mix_20`：
+已经完成的主要命令是：
 
 ```bash
 ./scripts/run_pipeline_with_n_seeds.sh configs/ablation/diff_branch/batlinet_supervised_weighted/mix_20.yaml 8
 ```
 
-4. 下载 supervised weighted workspace 的 `predictions_seed_*.pkl`、`log.*` 和 `config_*.yaml`。
-5. 本地用 `compare_experiment_results.py` 对比：
-   - baseline：之前复现的 `mix_20_0424`；
-   - candidate：服务器下载的 `batlinet_supervised_weighted/mix_20`。
+已经完成的本地对比包括：
 
-如果 supervised weighted 指标有提升，或者某些 seed 表现有明显差异，后续值得新增诊断模式，保存：
+```powershell
+conda run -n batlinet python scripts/compare_experiment_results.py ...
+conda run -n batlinet python scripts/build_mix20_three_way_comparison.py
+conda run -n batlinet python scripts/build_mix20_author_supervised_comparison.py
+```
+
+下一步建议新增诊断模式，保存：
 
 - 目标电池自身分支预测 `y_ori`；
 - 每个参考电池单独给出的预测 `y_sup_i`；
@@ -1207,4 +1361,18 @@ conda run -n batlinet python .\scripts\compare_experiment_results.py --help
 - 被采样参考电池的索引或 `cell_id`；
 - 最终聚合预测与真实标签。
 
-当前的 `predictions_seed_*.pkl` 还不包含这些细粒度信息，所以若要做参考电池可信度分析，需要继续改模型推理和保存逻辑。
+诊断目标：
+
+```text
+验证高权重参考电池是否真的具有更低的单独预测误差。
+如果相关性成立，就能更有力地说明“可信度加权”确实学到了参考电池质量，而不仅仅是训练扰动带来的指标变化。
+```
+
+可以进一步考虑的：
+
+```text
+score_loss_weight: 0 / 0.01 / 0.05 / 0.1
+train_support_size: 2 / 4 / 8
+warmup_epochs: 0 / 100 / 200
+score_head_type: linear / mlp
+```
