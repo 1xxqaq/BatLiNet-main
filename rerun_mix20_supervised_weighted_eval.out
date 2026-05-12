@@ -1,0 +1,41 @@
+nohup: ignoring input
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 0.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511023434_seed_0_epoch_1000.ckpt
+RMSE: 187.49 MAE: 126.89 MAPE: 0.17
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 1.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511024741_seed_1_epoch_1000.ckpt
+RMSE: 191.61 MAE: 124.02 MAPE: 0.19
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 2.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511025923_seed_2_epoch_1000.ckpt
+RMSE: 190.57 MAE: 121.35 MAPE: 0.17
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 3.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511031124_seed_3_epoch_1000.ckpt
+RMSE: 210.76 MAE: 133.41 MAPE: 0.18
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 4.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511032302_seed_4_epoch_1000.ckpt
+RMSE: 194.06 MAE: 122.61 MAPE: 0.16
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 5.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511033548_seed_5_epoch_1000.ckpt
+RMSE: 194.25 MAE: 121.21 MAPE: 0.16
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 6.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511034747_seed_6_epoch_1000.ckpt
+RMSE: 185.93 MAE: 118.11 MAPE: 0.17
+/root/autodl-tmp/BatLiNet-main/scripts/pipeline.py:105: UserWarning: Load datasets from cache cache/battery_cache_77862af655f13c018e21b44b696554e6.pkl.
+  warnings.warn(f'Load datasets from cache {str(cache_file)}.')
+Seed is set to 7.
+checkpoint: workspaces/ablation/diff_branch/batlinet_supervised_weighted/mix_20/20260511040009_seed_7_epoch_1000.ckpt
+RMSE: 192.78 MAE: 125.94 MAPE: 0.17
