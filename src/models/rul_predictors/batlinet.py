@@ -128,21 +128,11 @@ class BatLiNetRULPredictor(NNModel):
                support_label: torch.Tensor,
                return_loss: bool = False,
                epoch: int = None):
-        B, S, C, H, W = support_feature.size()
-
-        x_ori = self.ori_module(feature)
-        x_sup = self.sup_module(support_feature.view(-1, C, H, W))
-        x_sup = x_sup.view(B, S, self.channels)
-
-        y_ori = self.fc(x_ori.view(B, self.channels)).view(-1)
-        y_sup = self.fc(x_sup).view(B, S)
-        y_sup += support_label.view(B, S)
+        y_ori, y_sup, y_sup_agg, weight = self.compute_prediction_components(
+            feature, support_feature, support_label, epoch=epoch)
 
         if self.return_pointwise_predictions:
             return y_ori, y_sup
-
-        y_sup_agg, weight = self.aggregate_support_predictions(
-            x_sup, y_sup, epoch=epoch)
 
         if return_loss:
             loss = sum([
@@ -159,6 +149,24 @@ class BatLiNetRULPredictor(NNModel):
             return loss
 
         return (1. - self.alpha) * y_ori + self.alpha * y_sup_agg
+
+    def compute_prediction_components(self,
+                                      feature: torch.Tensor,
+                                      support_feature: torch.Tensor,
+                                      support_label: torch.Tensor,
+                                      epoch: int = None):
+        B, S, C, H, W = support_feature.size()
+
+        x_ori = self.ori_module(feature)
+        x_sup = self.sup_module(support_feature.view(-1, C, H, W))
+        x_sup = x_sup.view(B, S, self.channels)
+
+        y_ori = self.fc(x_ori.view(B, self.channels)).view(-1)
+        y_sup = self.fc(x_sup).view(B, S)
+        y_sup += support_label.view(B, S)
+        y_sup_agg, weight = self.aggregate_support_predictions(
+            x_sup, y_sup, epoch=epoch)
+        return y_ori, y_sup, y_sup_agg, weight
 
     def aggregate_support_predictions(self, x_sup, y_sup, epoch=None):
         if (
@@ -252,18 +260,44 @@ class BatLiNetRULPredictor(NNModel):
             self.link_latest_checkpoint(latest)
 
     @torch.no_grad()
-    def predict(self, dataset: DataBundle) -> torch.Tensor:
+    def predict(self,
+                dataset: DataBundle,
+                return_diagnostics: bool = False) -> torch.Tensor:
         self.eval()
         # Build a cycle diff dataset
         test_dataset = self.build_cycle_diff_dataset(dataset.test_data)
         ori_loader = DataLoader(
             test_dataset, self.test_batch_size, shuffle=False)
         predictions = []
+        diagnostics = {
+            'y_ori': [],
+            'y_sup': [],
+            'y_sup_agg': [],
+            'support_index': [],
+            'support_weight': []
+        } if return_diagnostics else None
         for indx, data_batch in enumerate(ori_loader):
             x, y, raw_x = data_batch.values()
-            sup_x, sup_y = self.get_support_set(
-                raw_x, dataset.train_data.feature, dataset.train_data.label)
-            predictions.append(self.forward(x, y, sup_x, sup_y))
+            if return_diagnostics:
+                sup_x, sup_y, sup_indx = self.get_support_set(
+                    raw_x,
+                    dataset.train_data.feature,
+                    dataset.train_data.label,
+                    return_indices=True)
+                y_ori, y_sup, y_sup_agg, weight = \
+                    self.compute_prediction_components(x, sup_x, sup_y)
+                pred = (1. - self.alpha) * y_ori + self.alpha * y_sup_agg
+                predictions.append(pred)
+                diagnostics['y_ori'].append(y_ori)
+                diagnostics['y_sup'].append(y_sup)
+                diagnostics['y_sup_agg'].append(y_sup_agg)
+                diagnostics['support_index'].append(sup_indx)
+                if weight is not None:
+                    diagnostics['support_weight'].append(weight)
+            else:
+                sup_x, sup_y = self.get_support_set(
+                    raw_x, dataset.train_data.feature, dataset.train_data.label)
+                predictions.append(self.forward(x, y, sup_x, sup_y))
         if self.return_pointwise_predictions:
             predictions = (
                 torch.cat([x[0] for x in predictions]),
@@ -271,7 +305,21 @@ class BatLiNetRULPredictor(NNModel):
             )
         else:
             predictions = torch.cat(predictions)
-        return predictions
+        if not return_diagnostics:
+            return predictions
+
+        support_weight = None
+        if diagnostics['support_weight']:
+            support_weight = torch.cat(diagnostics['support_weight'])
+
+        diagnostics = {
+            'y_ori': torch.cat(diagnostics['y_ori']),
+            'y_sup': torch.cat(diagnostics['y_sup']),
+            'y_sup_agg': torch.cat(diagnostics['y_sup_agg']),
+            'support_index': torch.cat(diagnostics['support_index']),
+            'support_weight': support_weight,
+        }
+        return predictions, diagnostics
 
     @torch.no_grad()
     def build_cycle_diff_dataset(self, dataset: Dataset):
@@ -290,7 +338,11 @@ class BatLiNetRULPredictor(NNModel):
         return DiffDataset(feature, raw_feature, dataset.label)
 
     @torch.no_grad()
-    def get_support_set(self, x, sup_feat, sup_label):
+    def get_support_set(self,
+                        x,
+                        sup_feat,
+                        sup_label,
+                        return_indices: bool = False):
         if self.features_to_drop is not None:
             mask = [i for i in range(sup_feat.size(1))
                     if i not in self.features_to_drop]
@@ -306,6 +358,8 @@ class BatLiNetRULPredictor(NNModel):
         feature = x.unsqueeze(1) - sup_feat[indx].view(B, -1, C, H, W)
         label = sup_label[indx].view(B, -1)
         feature = self._clean_feature(feature)
+        if return_indices:
+            return feature, label, indx.view(B, -1)
         return feature, label
 
     def _clean_feature(self, feature):

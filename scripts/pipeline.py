@@ -7,6 +7,7 @@ import pickle
 import hashlib
 import warnings
 import numpy as np
+import inspect
 
 from pathlib import Path
 from datetime import datetime
@@ -187,7 +188,13 @@ def main(config_path: str,
         else:
             if dataset is None:
                 dataset = build_dataset(configs, device)
-            prediction = model.predict(dataset)
+            diagnostics = None
+            predict_signature = inspect.signature(model.predict)
+            if 'return_diagnostics' in predict_signature.parameters:
+                prediction, diagnostics = model.predict(
+                    dataset, return_diagnostics=True)
+            else:
+                prediction = model.predict(dataset)
             scores = {
                 m: dataset.evaluate(prediction, m) for m in metric
             }
@@ -198,6 +205,11 @@ def main(config_path: str,
                     'data': dataset.to('cpu'),
                     'seed': seed,
                 }
+                if diagnostics is not None:
+                    obj['diagnostics'] = {
+                        key: value.detach().cpu() if value is not None else None
+                        for key, value in diagnostics.items()
+                    }
                 with open(
                     model.workspace / f'predictions_seed_{seed}_{ts}.pkl', 'wb'
                 ) as f:
