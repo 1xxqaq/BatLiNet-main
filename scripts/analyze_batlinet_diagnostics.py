@@ -6,16 +6,143 @@ import pickle
 import statistics
 import sys
 from pathlib import Path
+from functools import partial
 
 import numpy as np
 import torch
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+
 METRICS = ("RMSE", "MAE", "MAPE")
+
+
+class Dataset:
+    def __init__(self, feature=None, label=None):
+        self.feature = feature
+        self.label = label
+
+    def to(self, device):
+        if self.label is not None:
+            self.label = self.label.to(device)
+        if self.feature is not None:
+            self.feature = self.feature.to(device)
+        return self
+
+
+class DataBundle:
+    def __init__(self,
+                 train_feature=None,
+                 train_label=None,
+                 test_feature=None,
+                 test_label=None,
+                 feature_transformation=None,
+                 label_transformation=None):
+        self.train_data = Dataset(train_feature, train_label)
+        self.test_data = Dataset(test_feature, test_label)
+        self.feature_transformation = feature_transformation
+        self.label_transformation = label_transformation
+
+    def to(self, device):
+        self.train_data = self.train_data.to(device)
+        self.test_data = self.test_data.to(device)
+        if self.feature_transformation is not None:
+            self.feature_transformation = self.feature_transformation.to(device)
+        if self.label_transformation is not None:
+            self.label_transformation = self.label_transformation.to(device)
+        return self
+
+
+class BaseDataTransformation:
+    def fit(self, data):
+        return None
+
+    def transform(self, data):
+        return data
+
+    def inverse_transform(self, data):
+        return data
+
+    def to(self, device):
+        return self
+
+
+def _log_forward(base, x):
+    return torch.log(x) / math.log(base)
+
+
+class LogScaleDataTransformation(BaseDataTransformation):
+    def __init__(self, base=None):
+        self.base = base or math.e
+        if base is None:
+            self._func = torch.log
+            self._inv_func = torch.exp
+        else:
+            self._func = partial(_log_forward, base)
+            self._inv_func = partial(torch.pow, base)
+
+    def transform(self, data):
+        return self._func(data)
+
+    def inverse_transform(self, data):
+        return self._inv_func(data)
+
+
+class ZScoreDataTransformation(BaseDataTransformation):
+    def __init__(self):
+        self._mean = None
+        self._std = None
+
+    def fit(self, data):
+        self._mean = data.mean(0, keepdim=True)
+        self._std = torch.clamp(data.std(0, keepdim=True), min=1e-8)
+
+    def inverse_transform(self, data):
+        return data * self._std + self._mean
+
+    def to(self, device):
+        if self._mean is not None:
+            self._mean = self._mean.to(device)
+        if self._std is not None:
+            self._std = self._std.to(device)
+        return self
+
+
+class SequentialDataTransformation(BaseDataTransformation):
+    def __init__(self, transformations=None):
+        self.transformations = transformations or []
+
+    def inverse_transform(self, data):
+        for trans in self.transformations[::-1]:
+            data = trans.inverse_transform(data)
+        return data
+
+    def to(self, device):
+        self.transformations = [t.to(device) for t in self.transformations]
+        return self
+
+
+SAFE_SRC_CLASSES = {
+    ("src.data.databundle", "DataBundle"): DataBundle,
+    ("src.data.databundle", "Dataset"): Dataset,
+    ("src.data.transformation.base", "BaseDataTransformation"): BaseDataTransformation,
+    ("src.data.transformation.log_scale", "LogScaleDataTransformation"): LogScaleDataTransformation,
+    ("src.data.transformation.sequential", "SequentialDataTransformation"): SequentialDataTransformation,
+    ("src.data.transformation.z_score", "ZScoreDataTransformation"): ZScoreDataTransformation,
+}
+
+
+class PlaceholderObject:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __setstate__(self, state):
+        if isinstance(state, dict):
+            self.__dict__.update(state)
+        else:
+            self.__dict__["state"] = state
 
 
 class CPUUnpickler(pickle.Unpickler):
@@ -26,6 +153,10 @@ class CPUUnpickler(pickle.Unpickler):
                 map_location=torch.device("cpu"),
                 weights_only=False,
             )
+        if (module, name) in SAFE_SRC_CLASSES:
+            return SAFE_SRC_CLASSES[(module, name)]
+        if module.startswith("src."):
+            return PlaceholderObject
         return super().find_class(module, name)
 
 
@@ -45,10 +176,11 @@ def parse_args():
 def ensure_output_dirs(output_dir):
     tables_dir = output_dir / "tables"
     figures_dir = output_dir / "figures"
+    per_seed_figures_dir = figures_dir / "per_seed"
     summary_dir = output_dir / "summary"
-    for path in (tables_dir, figures_dir, summary_dir):
+    for path in (tables_dir, figures_dir, per_seed_figures_dir, summary_dir):
         path.mkdir(parents=True, exist_ok=True)
-    return tables_dir, figures_dir, summary_dir
+    return tables_dir, figures_dir, per_seed_figures_dir, summary_dir
 
 
 def load_pickle(path):
@@ -147,6 +279,20 @@ def write_text(path, text):
         fout.write(text)
 
 
+def configure_matplotlib():
+    import matplotlib
+
+    matplotlib.rcParams["font.sans-serif"] = [
+        "Microsoft YaHei",
+        "Noto Sans SC",
+        "SimHei",
+        "SimSun",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    matplotlib.rcParams["axes.unicode_minus"] = False
+
+
 def analyze_prediction_file(path):
     obj = load_pickle(path)
     diagnostics = obj.get("diagnostics")
@@ -206,8 +352,11 @@ def analyze_prediction_file(path):
             "share_best_single_beats_aggregated": float(
                 (sample_best_abs_error < agg_abs_error).float().mean()
             ),
-            "share_aggregated_beats_mean_single": float(
-                (agg_abs_error < sample_mean_abs_error).float().mean()
+            "share_aggregated_beats_median_single": float(
+                (agg_abs_error < sample_median_abs_error).float().mean()
+            ),
+            "share_aggregated_beats_self_branch": float(
+                (agg_abs_error < ori_abs_error).float().mean()
             ),
             "share_final_beats_self_branch": float(
                 (final_abs_error < ori_abs_error).float().mean()
@@ -224,6 +373,8 @@ def analyze_prediction_file(path):
     )
 
     weight_rows = []
+    pointwise_rows = []
+    self_point_rows = []
     if support_weight is not None:
         top_k = max(1, support_weight.size(1) // 4)
         top_idx = torch.topk(support_weight, k=top_k, dim=1).indices
@@ -259,12 +410,53 @@ def analyze_prediction_file(path):
             }
         )
 
+    support_weight_for_rows = support_weight
+    if support_weight_for_rows is None:
+        support_weight_for_rows = torch.full_like(y_sup, float("nan"))
+
+    for sample_idx in range(target.numel()):
+        self_point_rows.append(
+            {
+                "seed": int(obj["seed"]),
+                "sample_index": sample_idx,
+                "target_rul": float(target[sample_idx]),
+                "self_prediction_rul": float(y_ori[sample_idx]),
+                "self_abs_error": float(ori_abs_error[sample_idx]),
+                "aggregated_support_prediction_rul": float(y_sup_agg[sample_idx]),
+                "aggregated_support_abs_error": float(agg_abs_error[sample_idx]),
+                "final_prediction_rul": float(final_prediction[sample_idx]),
+                "final_abs_error": float(final_abs_error[sample_idx]),
+            }
+        )
+        for support_rank in range(y_sup.size(1)):
+            pointwise_rows.append(
+                {
+                    "seed": int(obj["seed"]),
+                    "sample_index": sample_idx,
+                    "support_rank": support_rank,
+                    "support_index": int(support_index[sample_idx, support_rank]),
+                    "target_rul": float(target[sample_idx]),
+                    "support_prediction_rul": float(y_sup[sample_idx, support_rank]),
+                    "support_abs_error": float(abs_error_pointwise[sample_idx, support_rank]),
+                    "support_weight": float(support_weight_for_rows[sample_idx, support_rank]),
+                    "support_distance": float(similarity_distance[sample_idx, support_rank]),
+                    "self_prediction_rul": float(y_ori[sample_idx]),
+                    "self_abs_error": float(ori_abs_error[sample_idx]),
+                    "aggregated_support_prediction_rul": float(y_sup_agg[sample_idx]),
+                    "aggregated_support_abs_error": float(agg_abs_error[sample_idx]),
+                    "final_prediction_rul": float(final_prediction[sample_idx]),
+                    "final_abs_error": float(final_abs_error[sample_idx]),
+                }
+            )
+
     return {
         "seed": int(obj["seed"]),
         "path": str(path),
         "prediction_rows": prediction_rows,
         "single_support_rows": single_support_rows,
         "weight_rows": weight_rows,
+        "pointwise_rows": pointwise_rows,
+        "self_point_rows": self_point_rows,
     }
 
 
@@ -289,21 +481,26 @@ def build_prediction_summary_rows(prediction_rows):
 
 
 def build_summary_text(args, prediction_rows, single_support_rows, weight_rows):
+    branch_labels = {
+        "self_branch": "自身分支",
+        "support_branch_aggregated": "参考分支聚合",
+        "final_prediction": "最终融合预测",
+    }
     lines = [
-        f"Experiment: {args.experiment_name}",
-        f"Workspace: {args.workspace}",
+        f"实验名称：{args.experiment_name}",
+        f"结果目录：{args.workspace}",
         "",
         "1. 自身分支 vs 参考分支聚合 vs 最终融合",
     ]
 
     for branch in ("self_branch", "support_branch_aggregated", "final_prediction"):
         rows = [row for row in prediction_rows if row["branch"] == branch]
-        lines.append(f"- {branch}:")
+        lines.append(f"- {branch_labels[branch]}：")
         for metric in METRICS:
             values = [row["value"] for row in rows if row["metric"] == metric]
             lines.append(
-                f"  {metric} mean={sum(values) / len(values):.4f}, "
-                f"std={statistics.pstdev(values) if len(values) > 1 else 0.0:.4f}"
+                f"  {metric} 平均值={sum(values) / len(values):.4f}，"
+                f"标准差={statistics.pstdev(values) if len(values) > 1 else 0.0:.4f}"
             )
 
     single_mean = single_support_rows
@@ -312,24 +509,28 @@ def build_summary_text(args, prediction_rows, single_support_rows, weight_rows):
             "",
             "2. 单个参考电池预测误差",
             (
-                f"- mean single-support abs error: "
+                f"- 单个参考预测绝对误差的平均值（mean single-support abs error）："
                 f"{mean_or_nan([row['mean_single_support_abs_error'] for row in single_mean]):.4f}"
             ),
             (
-                f"- best single-support abs error: "
+                f"- 单个参考中“最好那个参考”的绝对误差平均值（best single-support abs error）："
                 f"{mean_or_nan([row['best_single_support_abs_error'] for row in single_mean]):.4f}"
             ),
             (
-                f"- aggregated support abs error: "
+                f"- 参考分支聚合后的绝对误差平均值（aggregated support abs error）："
                 f"{mean_or_nan([row['aggregated_support_abs_error'] for row in single_mean]):.4f}"
             ),
             (
-                f"- share(best single beats aggregated): "
+                f"- 最佳单参考优于当前聚合结果的样本占比（share(best single beats aggregated)）："
                 f"{mean_or_nan([row['share_best_single_beats_aggregated'] for row in single_mean]):.4f}"
             ),
             (
-                f"- share(aggregated beats mean single): "
-                f"{mean_or_nan([row['share_aggregated_beats_mean_single'] for row in single_mean]):.4f}"
+                f"- 当前聚合结果优于“单参考中位数水平”的样本占比（share(aggregated beats median single)）："
+                f"{mean_or_nan([row['share_aggregated_beats_median_single'] for row in single_mean]):.4f}"
+            ),
+            (
+                f"- 当前聚合结果优于自身分支的样本占比（share(aggregated beats self branch)）："
+                f"{mean_or_nan([row['share_aggregated_beats_self_branch'] for row in single_mean]):.4f}"
             ),
         ]
     )
@@ -340,27 +541,27 @@ def build_summary_text(args, prediction_rows, single_support_rows, weight_rows):
         lines.extend(
             [
                 (
-                    f"- mean corr(weight, -abs_error): "
+                    f"- 权重与“负绝对误差”的平均相关性（mean corr(weight, -abs_error)）："
                     f"{mean_or_nan([row['weight_error_corr'] for row in weight_rows]):.4f}"
                 ),
                 (
-                    f"- mean corr(weight, -distance): "
+                    f"- 权重与“负距离”的平均相关性（mean corr(weight, -distance)）："
                     f"{mean_or_nan([row['weight_similarity_corr'] for row in weight_rows]):.4f}"
                 ),
                 (
-                    f"- top-weight abs error: "
+                    f"- 高权重参考组的平均绝对误差（top-weight abs error）："
                     f"{mean_or_nan([row['top_weight_abs_error'] for row in weight_rows]):.4f}"
                 ),
                 (
-                    f"- bottom-weight abs error: "
+                    f"- 低权重参考组的平均绝对误差（bottom-weight abs error）："
                     f"{mean_or_nan([row['bottom_weight_abs_error'] for row in weight_rows]):.4f}"
                 ),
                 (
-                    f"- share(top-weight beats bottom-weight error): "
+                    f"- 高权重参考组优于低权重参考组的样本占比（share(top-weight beats bottom-weight error)）："
                     f"{mean_or_nan([row['share_top_weight_beats_bottom_weight_error'] for row in weight_rows]):.4f}"
                 ),
                 (
-                    f"- share(top-weight is closer): "
+                    f"- 高权重参考组比低权重参考组更接近目标电池的样本占比（share(top-weight is closer)）："
                     f"{mean_or_nan([row['share_top_weight_is_closer'] for row in weight_rows]):.4f}"
                 ),
             ]
@@ -372,9 +573,11 @@ def build_summary_text(args, prediction_rows, single_support_rows, weight_rows):
 
 
 def plot_branch_metrics(prediction_rows, figures_dir, experiment_name):
+    configure_matplotlib()
     import matplotlib.pyplot as plt
 
     branches = ["self_branch", "support_branch_aggregated", "final_prediction"]
+    branch_labels = ["自身分支", "参考分支聚合", "最终融合预测"]
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
     for axis, metric in zip(axes, METRICS):
         values = []
@@ -385,10 +588,10 @@ def plot_branch_metrics(prediction_rows, figures_dir, experiment_name):
                 if row["branch"] == branch and row["metric"] == metric
             ]
             values.append(sum(branch_values) / len(branch_values))
-        bars = axis.bar(branches, values, width=0.6)
+        bars = axis.bar(branch_labels, values, width=0.6)
         ymax = max(values)
         axis.set_title(metric)
-        axis.set_ylabel("Score")
+        axis.set_ylabel("指标值")
         axis.tick_params(axis="x", rotation=18)
         axis.grid(axis="y", linestyle="--", alpha=0.4)
         axis.set_ylim(0, ymax * 1.18 if ymax > 0 else 1.0)
@@ -401,13 +604,14 @@ def plot_branch_metrics(prediction_rows, figures_dir, experiment_name):
                 va="bottom",
                 fontsize=9,
             )
-    fig.suptitle(f"{experiment_name} Branch Metric Means")
+    fig.suptitle(f"{experiment_name} 三个分支的平均指标")
     fig.tight_layout()
     fig.savefig(figures_dir / "branch_metric_means.png", dpi=200)
     plt.close(fig)
 
 
 def plot_single_support_analysis(single_support_rows, figures_dir, experiment_name):
+    configure_matplotlib()
     import matplotlib.pyplot as plt
 
     seeds = [row["seed"] for row in single_support_rows]
@@ -417,23 +621,23 @@ def plot_single_support_analysis(single_support_rows, figures_dir, experiment_na
         seeds,
         [row["best_single_support_abs_error"] for row in single_support_rows],
         marker="o",
-        label="best_single",
+        label="最好单参考误差",
     )
     axes[0].plot(
         seeds,
         [row["mean_single_support_abs_error"] for row in single_support_rows],
         marker="o",
-        label="mean_single",
+        label="单参考平均误差",
     )
     axes[0].plot(
         seeds,
         [row["aggregated_support_abs_error"] for row in single_support_rows],
         marker="o",
-        label="aggregated_support",
+        label="聚合后参考分支误差",
     )
-    axes[0].set_title("Absolute Error by Seed")
+    axes[0].set_title("不同 seed 的绝对误差")
     axes[0].set_xlabel("Seed")
-    axes[0].set_ylabel("Absolute Error")
+    axes[0].set_ylabel("绝对误差")
     axes[0].grid(linestyle="--", alpha=0.4)
     axes[0].legend()
 
@@ -441,28 +645,34 @@ def plot_single_support_analysis(single_support_rows, figures_dir, experiment_na
         seeds,
         [row["share_best_single_beats_aggregated"] for row in single_support_rows],
         marker="o",
-        label="best_single_beats_agg",
+        label="最好单参考优于聚合结果",
     )
     axes[1].plot(
         seeds,
-        [row["share_aggregated_beats_mean_single"] for row in single_support_rows],
+        [row["share_aggregated_beats_median_single"] for row in single_support_rows],
         marker="o",
-        label="agg_beats_mean_single",
+        label="聚合结果优于单参考中位数",
+    )
+    axes[1].plot(
+        seeds,
+        [row["share_aggregated_beats_self_branch"] for row in single_support_rows],
+        marker="o",
+        label="聚合结果优于自身分支",
     )
     axes[1].plot(
         seeds,
         [row["share_final_beats_self_branch"] for row in single_support_rows],
         marker="o",
-        label="final_beats_self",
+        label="最终融合优于自身分支",
     )
-    axes[1].set_title("Share by Seed")
+    axes[1].set_title("不同 seed 的样本占比")
     axes[1].set_xlabel("Seed")
-    axes[1].set_ylabel("Share")
+    axes[1].set_ylabel("占比")
     axes[1].set_ylim(0, 1)
     axes[1].grid(linestyle="--", alpha=0.4)
     axes[1].legend()
 
-    fig.suptitle(f"{experiment_name} Single Support Diagnostics")
+    fig.suptitle(f"{experiment_name} 单参考诊断")
     fig.tight_layout()
     fig.savefig(figures_dir / "single_support_diagnostics.png", dpi=200)
     plt.close(fig)
@@ -472,6 +682,7 @@ def plot_weight_analysis(weight_rows, figures_dir, experiment_name):
     if not weight_rows:
         return
 
+    configure_matplotlib()
     import matplotlib.pyplot as plt
 
     seeds = [row["seed"] for row in weight_rows]
@@ -481,17 +692,17 @@ def plot_weight_analysis(weight_rows, figures_dir, experiment_name):
         seeds,
         [row["top_weight_abs_error"] for row in weight_rows],
         marker="o",
-        label="top_weight_error",
+        label="高权重组误差",
     )
     axes[0].plot(
         seeds,
         [row["bottom_weight_abs_error"] for row in weight_rows],
         marker="o",
-        label="bottom_weight_error",
+        label="低权重组误差",
     )
-    axes[0].set_title("Top vs Bottom Weight Error")
+    axes[0].set_title("高低权重参考组误差对比")
     axes[0].set_xlabel("Seed")
-    axes[0].set_ylabel("Absolute Error")
+    axes[0].set_ylabel("绝对误差")
     axes[0].grid(linestyle="--", alpha=0.4)
     axes[0].legend()
 
@@ -499,41 +710,189 @@ def plot_weight_analysis(weight_rows, figures_dir, experiment_name):
         seeds,
         [row["weight_error_corr"] for row in weight_rows],
         marker="o",
-        label="corr(weight,-error)",
+        label="权重-误差相关性",
     )
     axes[1].plot(
         seeds,
         [row["weight_similarity_corr"] for row in weight_rows],
         marker="o",
-        label="corr(weight,-distance)",
+        label="权重-距离相关性",
     )
-    axes[1].set_title("Weight Correlations")
+    axes[1].set_title("权重相关性")
     axes[1].set_xlabel("Seed")
-    axes[1].set_ylabel("Correlation")
+    axes[1].set_ylabel("相关系数")
     axes[1].set_ylim(-1, 1)
     axes[1].grid(linestyle="--", alpha=0.4)
     axes[1].legend()
 
-    fig.suptitle(f"{experiment_name} Weight Diagnostics")
+    fig.suptitle(f"{experiment_name} 权重诊断")
     fig.tight_layout()
     fig.savefig(figures_dir / "weight_diagnostics.png", dpi=200)
     plt.close(fig)
 
 
+def _select_representative_samples(support_rows, self_rows):
+    by_sample_support = {}
+    for row in support_rows:
+        by_sample_support.setdefault(row["sample_index"], []).append(row)
+    self_by_sample = {row["sample_index"]: row for row in self_rows}
+
+    sample_stats = []
+    for sample_index, rows in by_sample_support.items():
+        rows_sorted = sorted(rows, key=lambda x: x["support_abs_error"])
+        best_support_error = rows_sorted[0]["support_abs_error"]
+        support_gap = (
+            self_by_sample[sample_index]["aggregated_support_abs_error"]
+            - best_support_error
+        )
+        sample_stats.append(
+            {
+                "sample_index": sample_index,
+                "aggregated_error": self_by_sample[sample_index]["aggregated_support_abs_error"],
+                "self_error": self_by_sample[sample_index]["self_abs_error"],
+                "support_gap": support_gap,
+            }
+        )
+
+    chosen = []
+    if sample_stats:
+        chosen.append(
+            ("聚合效果最好", min(sample_stats, key=lambda x: x["aggregated_error"])["sample_index"])
+        )
+        chosen.append(
+            ("聚合最没用好最好单参考", max(sample_stats, key=lambda x: x["support_gap"])["sample_index"])
+        )
+        chosen.append(
+            ("自身分支误差最大", max(sample_stats, key=lambda x: x["self_error"])["sample_index"])
+        )
+
+    dedup = []
+    seen = set()
+    for label, sample_index in chosen:
+        if sample_index not in seen:
+            dedup.append((label, sample_index))
+            seen.add(sample_index)
+    return dedup
+
+
+def plot_per_seed_support_scatter(pointwise_rows, self_point_rows, per_seed_figures_dir, experiment_name):
+    configure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    seeds = sorted({row["seed"] for row in pointwise_rows})
+    for seed in seeds:
+        support_rows = [row for row in pointwise_rows if row["seed"] == seed]
+        self_rows = [row for row in self_point_rows if row["seed"] == seed]
+        if not support_rows:
+            continue
+
+        representatives = _select_representative_samples(support_rows, self_rows)
+        if not representatives:
+            continue
+
+        fig, axes = plt.subplots(len(representatives), 2, figsize=(14, 4.6 * len(representatives)))
+        if len(representatives) == 1:
+            axes = np.array([axes])
+
+        for row_idx, (sample_label, sample_index) in enumerate(representatives):
+            sample_support_rows = [
+                row for row in support_rows if row["sample_index"] == sample_index
+            ]
+            sample_support_rows = sorted(sample_support_rows, key=lambda x: x["support_rank"])
+            sample_self_row = next(row for row in self_rows if row["sample_index"] == sample_index)
+
+            support_ranks = [row["support_rank"] for row in sample_support_rows]
+            support_errors = [row["support_abs_error"] for row in sample_support_rows]
+            support_weights = [row["support_weight"] for row in sample_support_rows]
+
+            ax_left = axes[row_idx, 0]
+            bars = ax_left.bar(
+                support_ranks,
+                support_errors,
+                color=plt.cm.viridis(np.nan_to_num(support_weights, nan=0.0)),
+                alpha=0.85,
+            )
+            ax_left.axhline(
+                y=sample_self_row["self_abs_error"],
+                color="#d55e00",
+                linestyle="--",
+                linewidth=1.8,
+                label="自身分支误差",
+            )
+            ax_left.axhline(
+                y=sample_self_row["aggregated_support_abs_error"],
+                color="#0072b2",
+                linestyle="--",
+                linewidth=1.8,
+                label="参考分支聚合误差",
+            )
+            ax_left.axhline(
+                y=sample_self_row["final_abs_error"],
+                color="#7b3294",
+                linestyle="--",
+                linewidth=1.8,
+                label="最终融合误差",
+            )
+            ax_left.set_title(f"Seed {seed} 样本 {sample_index}：{sample_label}")
+            ax_left.set_xlabel("参考电池序号（0-31）")
+            ax_left.set_ylabel("单参考绝对误差")
+            ax_left.grid(axis="y", linestyle="--", alpha=0.3)
+            ax_left.legend(loc="upper right")
+
+            ax_right = axes[row_idx, 1]
+            ax_right.plot(
+                support_ranks,
+                support_weights,
+                color="#009e73",
+                marker="o",
+                linewidth=1.8,
+                label="参考权重",
+            )
+            ax_right.set_ylim(0, max(max(support_weights) * 1.15, 0.05))
+            ax_right.set_xlabel("参考电池序号（0-31）")
+            ax_right.set_ylabel("参考权重")
+            ax_right.grid(axis="y", linestyle="--", alpha=0.3)
+
+            ax_right_twin = ax_right.twinx()
+            ax_right_twin.plot(
+                support_ranks,
+                support_errors,
+                color="#444444",
+                marker="x",
+                linewidth=1.2,
+                alpha=0.8,
+                label="单参考绝对误差",
+            )
+            ax_right_twin.set_ylabel("单参考绝对误差")
+
+            handles_left, labels_left = ax_right.get_legend_handles_labels()
+            handles_right, labels_right = ax_right_twin.get_legend_handles_labels()
+            ax_right.legend(handles_left + handles_right, labels_left + labels_right, loc="upper right")
+
+        fig.suptitle(f"{experiment_name} Seed {seed} 代表样本的参考误差-权重图")
+        fig.tight_layout()
+        fig.savefig(per_seed_figures_dir / f"seed_{seed}_support_scatter.png", dpi=220)
+        plt.close(fig)
+
+
 def main():
     args = parse_args()
     output_dir = Path(args.output_dir)
-    tables_dir, figures_dir, summary_dir = ensure_output_dirs(output_dir)
+    tables_dir, figures_dir, per_seed_figures_dir, summary_dir = ensure_output_dirs(output_dir)
 
     prediction_rows = []
     single_support_rows = []
     weight_rows = []
+    pointwise_rows = []
+    self_point_rows = []
 
     for file in select_latest_prediction_files(args.workspace):
         result = analyze_prediction_file(file)
         prediction_rows.extend(result["prediction_rows"])
         single_support_rows.extend(result["single_support_rows"])
         weight_rows.extend(result["weight_rows"])
+        pointwise_rows.extend(result["pointwise_rows"])
+        self_point_rows.extend(result["self_point_rows"])
 
     branch_summary_rows = []
     for branch in ("self_branch", "support_branch_aggregated", "final_prediction"):
@@ -566,7 +925,8 @@ def main():
             "self_branch_abs_error",
             "final_prediction_abs_error",
             "share_best_single_beats_aggregated",
-            "share_aggregated_beats_mean_single",
+            "share_aggregated_beats_median_single",
+            "share_aggregated_beats_self_branch",
             "share_final_beats_self_branch",
         ],
         single_support_rows,
@@ -587,6 +947,42 @@ def main():
         ],
         weight_rows,
     )
+    write_csv(
+        tables_dir / "support_prediction_details_by_point.csv",
+        [
+            "seed",
+            "sample_index",
+            "support_rank",
+            "support_index",
+            "target_rul",
+            "support_prediction_rul",
+            "support_abs_error",
+            "support_weight",
+            "support_distance",
+            "self_prediction_rul",
+            "self_abs_error",
+            "aggregated_support_prediction_rul",
+            "aggregated_support_abs_error",
+            "final_prediction_rul",
+            "final_abs_error",
+        ],
+        pointwise_rows,
+    )
+    write_csv(
+        tables_dir / "branch_prediction_details_by_sample.csv",
+        [
+            "seed",
+            "sample_index",
+            "target_rul",
+            "self_prediction_rul",
+            "self_abs_error",
+            "aggregated_support_prediction_rul",
+            "aggregated_support_abs_error",
+            "final_prediction_rul",
+            "final_abs_error",
+        ],
+        self_point_rows,
+    )
     write_text(
         summary_dir / "diagnostic_summary.txt",
         build_summary_text(args, prediction_rows, single_support_rows, weight_rows),
@@ -595,6 +991,8 @@ def main():
     plot_branch_metrics(prediction_rows, figures_dir, args.experiment_name)
     plot_single_support_analysis(single_support_rows, figures_dir, args.experiment_name)
     plot_weight_analysis(weight_rows, figures_dir, args.experiment_name)
+    plot_per_seed_support_scatter(
+        pointwise_rows, self_point_rows, per_seed_figures_dir, args.experiment_name)
 
     print(f"Saved outputs to: {output_dir}")
     print(f"Seeds analyzed: {len(single_support_rows)}")
